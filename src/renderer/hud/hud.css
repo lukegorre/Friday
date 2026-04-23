@@ -1,0 +1,348 @@
+:root {
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --surface:       rgba(18, 18, 20, 0.88);
+  --surface-mod:   rgba(12, 24, 52, 0.92);  /* Layer 2 blue tint */
+  --border:        rgba(255, 255, 255, 0.08);
+  --text-primary:  rgba(255, 255, 255, 0.95);
+  --text-secondary:rgba(255, 255, 255, 0.55);
+  --dot-green:     #22c55e;
+  --dot-amber:     #f59e0b;
+  --dot-red:       #ef4444;
+  --arc-color:     rgba(255, 255, 255, 0.7);
+  --divider:       rgba(255, 255, 255, 0.12);
+  --radius:        10px;
+  --font-size-sm:  11px;
+  --font-size-md:  13px;
+  --font-size-lg:  15px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%; height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: var(--font);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  width: 100%; height: 100%;
+  background: transparent;
+  pointer-events: none;
+  position: relative;
+}
+
+/* HUD container — anchored bottom-right */
+.hud-anchor {
+  position: absolute;
+  bottom: 20px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  pointer-events: none;
+}
+
+/* Base surface */
+.hud-surface {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  overflow: hidden;
+}
+
+.hud-surface.modifier-active {
+  background: var(--surface-mod);
+  border-color: rgba(99, 179, 237, 0.2);
+}
+
+/* Drag handle — the strip itself */
+.hud-drag {
+  -webkit-app-region: drag;
+  pointer-events: auto;
+  cursor: grab;
+}
+
+/* ── State 1 strip ─────────────────────────────────────────────────────────── */
+.strip {
+  width: 200px;
+  height: 40px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.strip-profile {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Sensor dot ──────────────────────────────────────────────────────────────*/
+.sensor-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background-color 0.4s ease;
+}
+
+/* ── State 2 bar ─────────────────────────────────────────────────────────── */
+.status-bar {
+  width: 300px;
+  height: 44px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.status-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.status-item + .status-item {
+  border-left: 1px solid var(--divider);
+}
+
+.status-label {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.status-value {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60px;
+  text-align: center;
+}
+
+/* ── MOD pill ────────────────────────────────────────────────────────────────*/
+.mod-pill {
+  background: rgba(99, 179, 237, 0.2);
+  border: 1px solid rgba(99, 179, 237, 0.4);
+  color: rgba(147, 210, 255, 0.9);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+/* ── State 3 gesture slot ───────────────────────────────────────────────────*/
+.gesture-slot {
+  width: 300px;
+  padding: 12px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+}
+
+.gesture-name {
+  font-size: var(--font-size-lg);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.gesture-action {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.arc-container {
+  height: 3px;
+  position: relative;
+  margin-top: 8px;
+}
+
+/* ── State 4 cheat sheet ─────────────────────────────────────────────────── */
+.cheat-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.cheat-sheet-panel {
+  width: 680px;
+  max-height: 80vh;
+  background: rgba(22, 22, 26, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 32px;
+  overflow-y: auto;
+  backdrop-filter: blur(30px) saturate(200%);
+  -webkit-backdrop-filter: blur(30px) saturate(200%);
+}
+
+.cheat-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  margin-top: 24px;
+}
+.cheat-section-title:first-child { margin-top: 0; }
+
+.cheat-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  gap: 16px;
+}
+
+.cheat-gesture-col { flex: 1; }
+
+.cheat-gesture-name {
+  font-size: var(--font-size-md);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.cheat-gesture-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.cheat-action {
+  font-size: var(--font-size-md);
+  font-weight: 400;
+  color: var(--text-secondary);
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ── Background panel (Layer 3) ─────────────────────────────────────────── */
+.bg-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 460px;
+  background: rgba(14, 14, 18, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  overflow: hidden;
+  pointer-events: none;
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+}
+
+.bg-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: rgba(255,255,255,0.06);
+}
+
+.bg-widget {
+  background: rgba(14, 14, 18, 0.98);
+  padding: 16px 18px;
+}
+
+.bg-widget-title {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.bg-status-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.bg-status-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+.discord-state {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.discord-indicator {
+  font-size: 16px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+.discord-indicator.live     { color: #22c55e; background: rgba(34,197,94,0.12); }
+.discord-indicator.muted    { color: #ef4444; background: rgba(239,68,68,0.12); }
+.discord-indicator.deafened { color: #f59e0b; background: rgba(245,158,11,0.12); }
+
+.spotify-track { font-size: 13px; font-weight: 500; }
+.spotify-artist { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+.spotify-progress-bar {
+  height: 2px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 1px;
+  margin-top: 10px;
+  overflow: hidden;
+}
+.spotify-progress-fill {
+  height: 100%;
+  background: rgba(255,255,255,0.5);
+  border-radius: 1px;
+  transition: width 1s linear;
+}
+
+.bg-footer {
+  padding: 10px 18px;
+  display: flex;
+  gap: 0;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.bg-footer-item {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.bg-footer-item + .bg-footer-item::before {
+  content: '·';
+  margin-right: 4px;
+  opacity: 0.4;
+}
