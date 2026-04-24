@@ -22,12 +22,12 @@ export default function VisualizerApp() {
       <StatusBar status={status} fps={fps} handCount={handCount} />
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* Hand canvas — 65% */}
-        <div style={{ flex: '0 0 65%', position: 'relative', background: '#07070f' }}>
+        {/* Hand canvas — 60% */}
+        <div style={{ flex: '0 0 60%', position: 'relative' }}>
           <HandCanvas frame={frame} />
         </div>
 
-        {/* Gesture panel — 35% */}
+        {/* Gesture panel — 40% */}
         <GesturePanel frame={frame} />
       </div>
     </div>

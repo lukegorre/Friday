@@ -15,7 +15,7 @@ function play(filename) {
   const filePath = getAssetPath(filename).replace(/\\/g, '\\\\')
   return psRunner.run(
     `(New-Object System.Media.SoundPlayer '${filePath}').Play()`
-  )
+  ).catch(() => {})
 }
 
 module.exports = {

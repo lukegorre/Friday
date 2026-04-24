@@ -17,6 +17,7 @@
     "@react-three/postprocessing": "^2.19.1",
     "active-win": "^7.1.0",
     "electron-store": "^8.2.0",
+    "koffi": "^2.16.1",
     "three": "^0.184.0",
     "ws": "^8.20.0"
   },

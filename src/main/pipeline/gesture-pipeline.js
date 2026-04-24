@@ -10,10 +10,15 @@ const chime = require('../audio/chime-player')
 
 // Cooldown tracking: gesture → last fire timestamp
 const _lastFired = {}
+let _cooldownMs  = TIMING.COOLDOWN_MS
+
+function setCooldown(ms) {
+  _cooldownMs = Math.max(0, Math.round(ms))
+}
 
 function canFire(gesture, now) {
   const last = _lastFired[gesture] || 0
-  return (now - last) >= TIMING.COOLDOWN_MS
+  return (now - last) >= _cooldownMs
 }
 
 function recordFire(gesture, now) {
@@ -207,6 +212,7 @@ function onHandExit({ hand }) {
 }
 
 module.exports = {
+  setCooldown,
   onGestureEvent,
   onHoldStart,
   onHoldCancel,

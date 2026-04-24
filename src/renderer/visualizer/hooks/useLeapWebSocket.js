@@ -1,16 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
-const LEAP_WS_URL    = 'ws://127.0.0.1:6437/v6.json'
-const FPS_WINDOW     = 30
-const FOCUS_HZ_MS    = 500   // re-assert focus every 500ms while window is focused
+const FPS_WINDOW = 30
 
 export function useLeapWebSocket() {
   const [frame, setFrame]   = useState(null)
   const [status, setStatus] = useState('waiting')
   const [fps, setFps]       = useState(0)
 
-  const fpsTimesRef = useRef([])
-  const wsRef       = useRef(null)
+  const fpsTimesRef    = useRef([])
+  const nativeFpsRef   = useRef(0)
+  const latestFrameRef = useRef(null)  // written by IPC callback, read by rAF loop
+  const rafRef         = useRef(null)
+  const holdTimerRef   = useRef(null)
+  const loggedRef      = useRef(false)
 
   const trackFps = useCallback(() => {
     const now = performance.now()
@@ -19,82 +21,67 @@ export function useLeapWebSocket() {
     const times = fpsTimesRef.current
     if (times.length >= 2) {
       const elapsed = times[times.length - 1] - times[0]
-      setFps(Math.round(((times.length - 1) / elapsed) * 1000))
+      const measured = Math.round(((times.length - 1) / elapsed) * 1000)
+      setFps(nativeFpsRef.current || measured)
     }
   }, [])
 
   useEffect(() => {
-    let retry    = null
-    let heartbeat = null
-    let active   = true
+    const api = window.leapAPI
+    if (!api) { console.warn('[useLeap] leapAPI not available'); return }
 
-    function send(obj) {
-      const ws = wsRef.current
-      if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj))
-    }
+    api.getStatus().then(s => { if (s) setStatus(s) }).catch(() => {})
 
-    function startHeartbeat() {
-      stopHeartbeat()
-      send({ focused: true })
-      heartbeat = setInterval(() => send({ focused: true }), FOCUS_HZ_MS)
-    }
-    function stopHeartbeat() {
-      clearInterval(heartbeat)
-      heartbeat = null
-    }
-
-    const onFocus = () => startHeartbeat()
-    const onBlur  = () => { stopHeartbeat(); send({ focused: false }) }
-
-    window.addEventListener('focus', onFocus)
-    window.addEventListener('blur',  onBlur)
-
-    function connect() {
-      if (!active) return
-      const ws = new WebSocket(LEAP_WS_URL)
-      wsRef.current = ws
-
-      ws.onopen = () => {
-        setStatus('connected')
-        if (document.hasFocus()) startHeartbeat()
-        else send({ focused: false })
+    // rAF loop — React state updates happen at display rate (≤60fps), never faster.
+    // IPC frames arrive at 115fps; the ref absorbs them with zero render cost.
+    function rafLoop() {
+      const frameData = latestFrameRef.current
+      if (frameData !== null) {
+        latestFrameRef.current = null
+        if (frameData.hands.length > 0) {
+          if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null }
+          setFrame({ hands: frameData.hands })
+        } else {
+          if (!holdTimerRef.current) {
+            holdTimerRef.current = setTimeout(() => {
+              holdTimerRef.current = null
+              setFrame({ hands: [] })
+            }, 200)
+          }
+        }
       }
+      rafRef.current = requestAnimationFrame(rafLoop)
+    }
+    rafRef.current = requestAnimationFrame(rafLoop)
 
-      ws.onmessage = (e) => {
-        try {
-          const data = JSON.parse(e.data)
-          if (!Array.isArray(data.hands)) return
-          const pointables = Array.isArray(data.pointables) ? data.pointables : []
-          const hands = data.hands.map(h => ({
-            ...h,
-            fingers: pointables.filter(p => p.handId === h.id)
-          }))
-          trackFps()
-          setFrame({ ...data, hands })
-        } catch {}
+    const offFrame = api.onFrame(frameData => {
+      api.ack()  // release the next frame immediately — keeps IPC slot-based, no queue
+      nativeFpsRef.current = frameData.fps || 0
+      trackFps()
+      if (!loggedRef.current && frameData.hands.length > 0) {
+        console.log('[useLeap] first hands at renderer:', frameData.hands.length,
+          'palmY:', frameData.hands[0]?.palmPosition?.[1]?.toFixed(0))
+        loggedRef.current = true
       }
+      latestFrameRef.current = frameData  // store only — rAF loop renders it
+    })
 
-      ws.onerror = () => setStatus('error')
-
-      ws.onclose = () => {
-        wsRef.current = null
-        stopHeartbeat()
-        setStatus('waiting')
+    const offStatus = api.onStatus(s => {
+      setStatus(s)
+      if (s !== 'connected') {
         setFps(0)
-        fpsTimesRef.current = []
-        if (active) retry = setTimeout(connect, 2000)
+        fpsTimesRef.current  = []
+        nativeFpsRef.current = 0
+        latestFrameRef.current = null
+        setFrame(null)
       }
-    }
-
-    connect()
+    })
 
     return () => {
-      active = false
-      clearTimeout(retry)
-      stopHeartbeat()
-      window.removeEventListener('focus', onFocus)
-      window.removeEventListener('blur',  onBlur)
-      if (wsRef.current) { wsRef.current.close(); wsRef.current = null }
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+      if (holdTimerRef.current) clearTimeout(holdTimerRef.current)
+      offFrame?.()
+      offStatus?.()
     }
   }, [trackFps])
 

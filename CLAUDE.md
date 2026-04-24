@@ -1,3 +1,58 @@
+# Workflow Rules
+
+## Commit conventions
+- Use conventional commits: `feat:`, `fix:`, `refactor:`, `chore:`, `docs:` prefixes
+- Subject line: imperative mood, ≤72 chars, no period (e.g. `feat: add swipe gesture cooldown`)
+- One logical change per commit — do not bundle unrelated changes
+
+## Dev pipeline — always autonomous
+- **Never ask the user to launch the app, paste console output, or restart manually**
+- Kill existing Electron before relaunching: `taskkill /f /im electron.exe 2>/dev/null; true`
+- Clear and launch with full output capture: `> dev.log; npm run dev >> dev.log 2>&1` (Bash, `run_in_background: true`)
+- Watch `dev.log` with `Monitor` (persistent) filtering for key signals — errors, leap-native lines, nHands changes
+- Read `dev.log` directly at any time for the full picture
+- Always self-diagnose from log output before reporting findings to the user
+
+## IMPORTANT: Always answer questions first
+- **Always answer the user's questions directly and completely before starting any task**
+- If you have ANY confusion about what is being asked, or are incapable of doing something, say so upfront — do not start working and silently fail
+- Never pretend to have capability you don't have (e.g. seeing the screen, reading hardware state) — be explicit about what you can and cannot observe
+- If the user asks multiple questions, answer all of them before touching any code or tools
+
+## IMPORTANT: Establish an information pipeline before writing code
+- Before writing code that interacts with hardware, external processes, or UI state you cannot directly observe, first set up a way to receive that data (logs, monitors, IPC, process output)
+- Do not write diagnostic code you cannot read the output of — verify the pipeline works end-to-end before building on top of it
+- If you realize mid-task that you have no way to verify whether your code is working, stop and say so explicitly rather than guessing
+
+## IMPORTANT: Before starting any task
+- If a task touches more than 2 files or involves an unclear approach, enter Plan Mode first
+- Present a written plan and wait for my approval before writing any code
+- If you are uncertain about scope, ASK before acting
+
+## IMPORTANT: Checkpoints required
+- Stop and check in with me after every major phase (explore, plan, implement)
+- Do NOT chain multiple phases together autonomously
+- If you hit an unexpected problem mid-task, STOP and report it — do not attempt to self-recover silently
+
+## Context management
+- Prefer running single tests, not the full test suite
+- Do NOT read entire directories speculatively — ask me which files are relevant
+- Use /compact proactively when context gets long, not after it's already degraded
+
+## Task scoping
+- If a task feels large, break it into steps and confirm each one with me
+- Never spend more than ~10 tool calls on a single sub-problem without checking in
+- If you're looping or retrying the same approach more than twice, stop and tell me
+
+## IMPORTANT: Planning scope
+- When asked to plan, plan ONLY the immediate task I described — not the broader project
+- A good plan is 5-10 bullet points max
+- Do NOT plan future phases, related improvements, or things I didn't ask about
+- If you think something adjacent is worth doing, mention it in ONE sentence at the end — don't plan it
+- Ask me to confirm scope before planning if you're unsure what counts as "this task"
+
+---
+
 # Gesture Control System — Project Brief for Claude Code
 
 ## What This Project Is

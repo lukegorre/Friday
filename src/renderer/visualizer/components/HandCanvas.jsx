@@ -1,155 +1,242 @@
-import React, { useRef, useEffect } from 'react'
+import React, { useMemo, useEffect, useRef } from 'react'
+import { Canvas, useThree, useFrame } from '@react-three/fiber'
+import * as THREE from 'three'
+import { classifyGestures } from '../lib/gestureClassifier'
 
-// Camera sits 600mm in front, looking at activation zone center (0, 150, 0)
-const CAM_Z     = -700
-const FOCAL     = 450
-const CX_OFFSET = 0
-const CY_OFFSET = -40  // shift center slightly up
+// 1 Three.js unit = 100 mm
+const S = 0.01
 
-const COLORS = {
-  right: { bone: '#00c8ff', joint: '#7ee8ff', palm: '#00a0cc' },
-  left:  { bone: '#ff8040', joint: '#ffc0a0', palm: '#cc5a20' },
+function toV([x, y, z]) { return [x * S, y * S, z * S] }
+
+// ── Static scene geometry ─────────────────────────────────────────────────────
+
+// Pre-baked edges geometry for the activation zone box (40 × 25 × 30 cm)
+const ZONE_EDGES_GEO = new THREE.EdgesGeometry(new THREE.BoxGeometry(4, 2.5, 3))
+
+// Pre-baked floor grid
+const FLOOR_GEO = (() => {
+  const g = new THREE.BufferGeometry()
+  const pts = []
+  for (let x = -2; x <= 2; x += 0.5) { pts.push(x, 0, -1.5,  x, 0, 1.5) }
+  for (let z = -1.5; z <= 1.5; z += 0.5) { pts.push(-2, 0, z,  2, 0, z) }
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
+  return g
+})()
+
+function ZoneBox() {
+  return (
+    <lineSegments geometry={ZONE_EDGES_GEO} position={[0, 1.75, 0]}>
+      <lineBasicMaterial color="#2244cc" transparent opacity={0.3} />
+    </lineSegments>
+  )
 }
 
-function project(x, y, z, w, h) {
-  const dz    = z - CAM_Z
-  const scale = FOCAL / dz
-  const sx    = w / 2 + CX_OFFSET + x * scale
-  const sy    = h / 2 + CY_OFFSET - y * scale   // y up → screen down
-  return { sx, sy, scale }
+function ZoneFloor() {
+  return (
+    <lineSegments geometry={FLOOR_GEO}>
+      <lineBasicMaterial color="#ffffff" transparent opacity={0.03} />
+    </lineSegments>
+  )
 }
 
-function drawHand(ctx, hand, w, h) {
-  const col   = COLORS[hand.type === 'left' ? 'left' : 'right']
-  const alpha = 0.35 + 0.65 * Math.max(0, Math.min(1, hand.confidence ?? 1))
+// ── Hand skeleton — one LineSegments object per hand for all bones ─────────────
 
-  ctx.globalAlpha = alpha
+function HandSkeleton({ hand, isForming, isFiring }) {
+  const meshRef  = useRef()
+  const geoRef   = useRef(new THREE.BufferGeometry())
 
-  // Bones
-  ctx.strokeStyle = col.bone
-  ctx.lineWidth   = 2.5
-  ctx.lineCap     = 'round'
-  for (const finger of hand.fingers ?? []) {
-    for (const bone of finger.bones ?? []) {
-      if (!bone.prevJoint || !bone.nextJoint) continue
-      const { sx: ax, sy: ay } = project(...bone.prevJoint, w, h)
-      const { sx: bx, sy: by } = project(...bone.nextJoint, w, h)
-      ctx.beginPath()
-      ctx.moveTo(ax, ay)
-      ctx.lineTo(bx, by)
-      ctx.stroke()
-    }
-  }
+  useFrame(() => {
+    if (!meshRef.current) return
 
-  // Joints
-  ctx.fillStyle = col.joint
-  for (const finger of hand.fingers ?? []) {
-    for (const bone of finger.bones ?? []) {
-      if (!bone.prevJoint || !bone.nextJoint) continue
-      for (const joint of [bone.prevJoint, bone.nextJoint]) {
-        const { sx, sy, scale } = project(...joint, w, h)
-        const r = Math.max(2, 3.5 * scale)
-        ctx.beginPath()
-        ctx.arc(sx, sy, r, 0, Math.PI * 2)
-        ctx.fill()
+    const pts = []
+    for (const finger of hand.fingers ?? []) {
+      for (const bone of finger.bones ?? []) {
+        if (!bone.prevJoint || !bone.nextJoint) continue
+        pts.push(...toV(bone.prevJoint), ...toV(bone.nextJoint))
       }
     }
-  }
+    const arr = new Float32Array(pts)
+    geoRef.current.setAttribute('position', new THREE.BufferAttribute(arr, 3))
+    geoRef.current.attributes.position.needsUpdate = true
 
-  // Palm
-  const { sx: px, sy: py, scale: ps } = project(...(hand.palmPosition ?? [0, 150, 0]), w, h)
-  ctx.fillStyle   = col.palm
-  ctx.strokeStyle = col.bone
-  ctx.lineWidth   = 1.5
-  ctx.beginPath()
-  ctx.arc(px, py, Math.max(6, 12 * ps), 0, Math.PI * 2)
-  ctx.fill()
-  ctx.stroke()
-
-  ctx.globalAlpha = 1
-}
-
-function drawGrid(ctx, w, h) {
-  ctx.strokeStyle = 'rgba(255,255,255,0.04)'
-  ctx.lineWidth = 1
-  // Horizontal lines in activation zone plane (Y=50..300, X=-200..200)
-  for (let y = 50; y <= 300; y += 50) {
-    const l = project(-200, y, 0, w, h)
-    const r = project( 200, y, 0, w, h)
-    ctx.beginPath(); ctx.moveTo(l.sx, l.sy); ctx.lineTo(r.sx, r.sy); ctx.stroke()
-  }
-  // Vertical lines
-  for (let x = -200; x <= 200; x += 100) {
-    const t = project(x, 300, 0, w, h)
-    const b = project(x,  50, 0, w, h)
-    ctx.beginPath(); ctx.moveTo(t.sx, t.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke()
-  }
-}
-
-function drawZoneLabel(ctx, w, h) {
-  ctx.fillStyle    = 'rgba(255,255,255,0.08)'
-  ctx.font         = '11px -apple-system, system-ui, monospace'
-  ctx.textAlign    = 'right'
-  ctx.fillText('activation zone  400 × 250 × 300 mm', w - 12, h - 12)
-}
-
-export default function HandCanvas({ frame }) {
-  const canvasRef = useRef(null)
-  const rafRef    = useRef(null)
-  const frameRef  = useRef(null)
-
-  // Keep latest frame in a ref so the rAF loop doesn't need re-registration
-  useEffect(() => { frameRef.current = frame }, [frame])
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-
-    function render() {
-      const w = canvas.width
-      const h = canvas.height
-      const f = frameRef.current
-
-      ctx.clearRect(0, 0, w, h)
-      drawGrid(ctx, w, h)
-
-      if (f?.hands?.length) {
-        for (const hand of f.hands) drawHand(ctx, hand, w, h)
-      } else {
-        // Empty state hint
-        ctx.fillStyle = 'rgba(255,255,255,0.08)'
-        ctx.font      = '13px -apple-system, system-ui, sans-serif'
-        ctx.textAlign = 'center'
-        ctx.fillText('Place hand above sensor', w / 2, h / 2)
-      }
-
-      drawZoneLabel(ctx, w, h)
-      rafRef.current = requestAnimationFrame(render)
-    }
-
-    // Sync canvas resolution to layout size
-    function resize() {
-      canvas.width  = canvas.offsetWidth  * devicePixelRatio
-      canvas.height = canvas.offsetHeight * devicePixelRatio
-      ctx.scale(devicePixelRatio, devicePixelRatio)
-    }
-
-    const ro = new ResizeObserver(resize)
-    ro.observe(canvas)
-    resize()
-    rafRef.current = requestAnimationFrame(render)
-
-    return () => {
-      cancelAnimationFrame(rafRef.current)
-      ro.disconnect()
-    }
-  }, [])
+    const mat = meshRef.current.material
+    mat.color.set(isFiring ? '#ffffff' : isForming ? '#ffaa44' : '#00c8ff')
+    mat.opacity = 0.7 + 0.3 * (hand.confidence ?? 1)
+  })
 
   return (
-    <canvas
-      ref={canvasRef}
-      style={{ width: '100%', height: '100%', display: 'block' }}
-    />
+    <lineSegments ref={meshRef} geometry={geoRef.current}>
+      <lineBasicMaterial
+        color="#00c8ff"
+        transparent
+        opacity={0.9}
+        vertexColors={false}
+      />
+    </lineSegments>
+  )
+}
+
+// ── Joint spheres ─────────────────────────────────────────────────────────────
+
+const JOINT_GEO = new THREE.SphereGeometry(0.06, 7, 5)
+const EXT_JOINT_GEO = new THREE.SphereGeometry(0.075, 8, 6)
+
+function JointSpheres({ hand, isForming, isFiring }) {
+  const joints = []
+  const seen   = new Set()
+
+  for (const finger of hand.fingers ?? []) {
+    for (const bone of finger.bones ?? []) {
+      for (const [raw, ext] of [
+        [bone.prevJoint, finger.extended],
+        [bone.nextJoint, finger.extended],
+      ]) {
+        if (!raw) continue
+        const key = raw.map(v => Math.round(v)).join(',')
+        if (!seen.has(key)) {
+          seen.add(key)
+          joints.push({ pos: toV(raw), extended: ext })
+        }
+      }
+    }
+  }
+
+  return (
+    <>
+      {joints.map((j, i) => {
+        const color    = j.extended
+          ? (isFiring ? '#ffffff' : isForming ? '#ffe090' : '#c0f0ff')
+          : '#334455'
+        const emissive = j.extended
+          ? (isFiring ? '#ffffff' : isForming ? '#ff6600' : '#002244')
+          : '#000000'
+        const emi = j.extended ? (isFiring ? 3 : isForming ? 1.5 : 0.4) : 0
+
+        return (
+          <mesh key={i} position={j.pos} geometry={j.extended ? EXT_JOINT_GEO : JOINT_GEO}>
+            <meshStandardMaterial
+              color={color}
+              emissive={emissive}
+              emissiveIntensity={emi}
+              roughness={0.4}
+              metalness={0.1}
+            />
+          </mesh>
+        )
+      })}
+    </>
+  )
+}
+
+// ── Palm disc ─────────────────────────────────────────────────────────────────
+
+const PALM_GEO = new THREE.SphereGeometry(1, 12, 8)
+
+function PalmDisc({ hand, isForming, isFiring }) {
+  const pos   = toV(hand.palmPosition ?? [0, 150, 0])
+  const grab  = hand.grabStrength ?? 0
+  const scale = Math.max(0.08, 0.18 * (1.2 - grab * 0.7))
+  const color = isFiring ? '#ffffff' : isForming ? '#ff9933' : '#3366cc'
+
+  return (
+    <mesh position={pos} scale={[scale, scale, scale]} geometry={PALM_GEO}>
+      <meshStandardMaterial
+        color={color}
+        transparent
+        opacity={0.35}
+        emissive={color}
+        emissiveIntensity={isFiring ? 1.5 : isForming ? 0.6 : 0.2}
+        roughness={0.5}
+      />
+    </mesh>
+  )
+}
+
+// ── Full hand model ───────────────────────────────────────────────────────────
+
+function HandModel({ hand }) {
+  const gestures   = classifyGestures(hand)
+  const confidence = gestures[0]?.confidence ?? 0
+  const isForming  = confidence >= 0.45 && confidence < 0.82
+  const isFiring   = confidence >= 0.82
+
+  return (
+    <group>
+      <HandSkeleton hand={hand} isForming={isForming} isFiring={isFiring} />
+      <JointSpheres  hand={hand} isForming={isForming} isFiring={isFiring} />
+      <PalmDisc      hand={hand} isForming={isForming} isFiring={isFiring} />
+    </group>
+  )
+}
+
+// ── Camera setup ──────────────────────────────────────────────────────────────
+
+function SceneSetup() {
+  const { camera } = useThree()
+  useEffect(() => {
+    camera.position.set(0, 3.5, 9)
+    camera.lookAt(0, 1.75, 0)
+    camera.updateProjectionMatrix()
+  }, []) // eslint-disable-line
+  return null
+}
+
+// ── Root component ────────────────────────────────────────────────────────────
+
+const _loggedHands = { current: false }
+
+export default function HandCanvas({ frame }) {
+  const hands = frame?.hands ?? []
+  if (hands.length && !_loggedHands.current) {
+    console.log('[HandCanvas] first frame with hands:', hands.length, 'palmY:', hands[0]?.palmPosition?.[1]?.toFixed(0))
+    _loggedHands.current = true
+  }
+
+  return (
+    <div style={{ width: '100%', height: '100%', position: 'relative', background: '#07070f' }}>
+      <Canvas
+        style={{ width: '100%', height: '100%' }}
+        camera={{ fov: 45, near: 0.1, far: 50 }}
+        gl={{ antialias: true, alpha: false }}
+        onCreated={({ gl, scene }) => {
+          gl.setClearColor(new THREE.Color('#07070f'))
+          scene.fog = new THREE.Fog('#07070f', 13, 26)
+        }}
+      >
+        <SceneSetup />
+
+        <ambientLight intensity={0.22} />
+        <pointLight position={[0, 6, 7]} intensity={1.8} />
+        <pointLight position={[-3, 4, -2]} intensity={0.55} color="#aabbff" />
+        <pointLight position={[3, 2, 4]} intensity={0.35} color="#ffddcc" />
+
+        <ZoneBox />
+        <ZoneFloor />
+
+        {hands.map(hand => (
+          <HandModel key={hand.type} hand={hand} />
+        ))}
+      </Canvas>
+
+      {/* Status overlays */}
+      {!hands.length && (
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          pointerEvents: 'none',
+        }}>
+          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.12)', letterSpacing: '0.06em' }}>
+            Place hand above sensor
+          </span>
+        </div>
+      )}
+      <div style={{
+        position: 'absolute', bottom: 10, right: 12,
+        fontSize: 10, color: 'rgba(255,255,255,0.1)',
+        letterSpacing: '0.08em', pointerEvents: 'none',
+      }}>
+        400 × 300 × 250 mm
+      </div>
+    </div>
   )
 }

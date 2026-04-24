@@ -18,7 +18,10 @@ function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v))
 }
 
-export function classifyGestures(hand) {
+// orientation: 'FORWARD_FACING' (sensor at desk edge, facing user) | 'TOP_DOWN' (sensor above)
+// In FORWARD_FACING mode, Z-axis is the primary vertical — use for thumb direction.
+export function classifyGestures(hand, orientation = 'FORWARD_FACING') {
+  const thumbAxisIdx = orientation === 'FORWARD_FACING' ? 2 : 1  // Z vs Y for "up"
   const f = fingersByType(hand)
   // extended booleans: e[0]=thumb..e[4]=pinky
   const e = f.map(fi => fi ? !!fi.extended : false)
@@ -91,7 +94,8 @@ export function classifyGestures(hand) {
   }
 
   // ── Thumbs Up ─────────────────────────────────────────────────────────────
-  // All fingers curled; thumb extended upward (direction.y > 0.5)
+  // All fingers curled; thumb extended upward (direction.y > 0)
+  // Threshold loosened from 0.9 → 0.75 to accommodate 45° hand angle
   {
     let score = 0
     if (e[0]) score += 0.2
@@ -100,14 +104,15 @@ export function classifyGestures(hand) {
     if (!e[3]) score += 0.15
     if (!e[4]) score += 0.15
     if (thumb && e[0]) {
-      const yComponent = thumb.direction[1]
-      if (yComponent > 0) score += 0.2 * clamp(yComponent / 0.9, 0, 1)
+      const c = thumb.direction[thumbAxisIdx]
+      if (c > 0) score += 0.2 * clamp(c / 0.75, 0, 1)
     }
     results.push({ name: 'Thumbs Up', confidence: clamp(score, 0, 1) })
   }
 
   // ── Thumbs Down ───────────────────────────────────────────────────────────
-  // All fingers curled; thumb extended downward (direction.y < -0.5)
+  // All fingers curled; thumb extended downward
+  // Threshold loosened from 0.9 → 0.75 to accommodate 45° hand angle
   {
     let score = 0
     if (e[0]) score += 0.2
@@ -116,8 +121,8 @@ export function classifyGestures(hand) {
     if (!e[3]) score += 0.15
     if (!e[4]) score += 0.15
     if (thumb && e[0]) {
-      const yComponent = thumb.direction[1]
-      if (yComponent < 0) score += 0.2 * clamp(-yComponent / 0.9, 0, 1)
+      const c = thumb.direction[thumbAxisIdx]
+      if (c < 0) score += 0.2 * clamp(-c / 0.75, 0, 1)
     }
     results.push({ name: 'Thumbs Down', confidence: clamp(score, 0, 1) })
   }
